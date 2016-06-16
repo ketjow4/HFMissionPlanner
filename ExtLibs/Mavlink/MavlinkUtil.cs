@@ -32,25 +32,36 @@ public static class MavlinkUtil
         return (TMavlinkPacket) newPacket;
     }
 
-    public static void ByteArrayToStructure(byte[] bytearray, ref object obj, int startoffset)
+    public static void ByteArrayToStructure(byte[] bytearray, ref object obj, int startoffset,int payloadlength = 0)
     {
         int len = Marshal.SizeOf(obj);
 
-        IntPtr i = Marshal.AllocHGlobal(len);
+        IntPtr iptr = Marshal.AllocHGlobal(len);
+
+        //clear memory
+        for (int i = 0; i < len; i += 8)
+        {
+            Marshal.WriteInt64(iptr,i, 0x00);
+        }
+
+        for (int i = len % 8; i < -1; i--)
+        {
+            Marshal.WriteByte(iptr, len - i, 0x00);
+        }
 
         try
         {
             // copy byte array to ptr
-            Marshal.Copy(bytearray, startoffset, i, len);
+            Marshal.Copy(bytearray, startoffset, iptr, payloadlength);
         }
         catch (Exception ex)
         {
             Console.WriteLine("ByteArrayToStructure FAIL " + ex.Message);
         }
 
-        obj = Marshal.PtrToStructure(i, obj.GetType());
+        obj = Marshal.PtrToStructure(iptr, obj.GetType());
 
-        Marshal.FreeHGlobal(i);
+        Marshal.FreeHGlobal(iptr);
     }
 
     public static TMavlinkPacket ByteArrayToStructureT<TMavlinkPacket>(byte[] bytearray, int startoffset)
@@ -74,6 +85,18 @@ public static class MavlinkUtil
         Marshal.FreeHGlobal(i);
 
         return (TMavlinkPacket) obj;
+    }
+
+    public static byte[] trim_payload(ref byte[] payload)
+    {
+        var length = payload.Length;
+        while (length > 0 && payload[length - 1] == 0)
+        {
+            length--;
+        }
+        if (length != payload.Length)
+            Array.Resize(ref payload, length);
+        return payload;
     }
 
     public static T ReadUsingPointer<T>(byte[] data, int startoffset) where T : struct
@@ -132,7 +155,9 @@ public static class MavlinkUtil
             }
             else
             {
-                reversestartoffset += ((byte[]) fieldValue).Length;
+                var elementsize = Marshal.SizeOf(((Array)fieldValue).GetValue(0));
+
+                reversestartoffset += ((Array)fieldValue).Length * elementsize;
             }
 
         }

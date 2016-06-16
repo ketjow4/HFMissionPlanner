@@ -9,6 +9,7 @@ using System.Threading;
 using System.Windows.Forms;
 using log4net;
 using MissionPlanner.Comms;
+using MissionPlanner.Radio;
 using uploader;
 
 namespace MissionPlanner
@@ -56,22 +57,22 @@ S15: MAX_WINDOW=131
             //SPLIT_remote.Panel2Collapsed = true;
 
             // setup netid
-            S3.DataSource = Enumerable.Range(0, 500).ToArray();
-            RS3.DataSource = Enumerable.Range(0, 500).ToArray();
+            NETID.DataSource = Enumerable.Range(0, 500).ToArray();
+            RNETID.DataSource = Enumerable.Range(0, 500).ToArray();
 
             var dict = Enum.GetValues(typeof (mavlink_option))
                 .Cast<mavlink_option>()
                 .ToDictionary(t => (int) t, t => t.ToString());
 
-            S6.DisplayMember = "Value";
-            S6.ValueMember = "Key";
-            S6.DataSource = dict.ToArray();
-            RS6.DisplayMember = "Value";
-            RS6.ValueMember = "Key";
-            RS6.DataSource = dict.ToArray();
+            MAVLINK.DisplayMember = "Value";
+            MAVLINK.ValueMember = "Key";
+            MAVLINK.DataSource = dict.ToArray();
+            RMAVLINK.DisplayMember = "Value";
+            RMAVLINK.ValueMember = "Key";
+            RMAVLINK.DataSource = dict.ToArray();
 
-            S15.DataSource = Enumerable.Range(33, 131 - 32).ToArray();
-            RS15.DataSource = Enumerable.Range(33, 131 - 32).ToArray();
+            MAX_WINDOW.DataSource = Enumerable.Range(33, 131 - 32).ToArray();
+            RMAX_WINDOW.DataSource = Enumerable.Range(33, 131 - 32).ToArray();
         }
 
         private bool getFirmware(Uploader.Board device, bool custom = false)
@@ -96,7 +97,7 @@ S15: MAX_WINDOW=131
                 {
                     return Common.getFilefromNet("http://firmware.ardupilot.org/SiK/beta/radio~rfd900.ihx", firmwarefile);
                 }
-                return Common.getFilefromNet("http://rfdesign.com.au/firmware/radio.rfd900.hex", firmwarefile);
+                return Common.getFilefromNet("http://firmware.ardupilot.org/SiK/stable/radio.rfd900.hex", firmwarefile);
             }
             if (device == Uploader.Board.DEVICE_ID_RFD900A)
             {
@@ -105,7 +106,7 @@ S15: MAX_WINDOW=131
                     return Common.getFilefromNet("http://firmware.ardupilot.org/SiK/beta/radio~rfd900a.ihx",
                         firmwarefile);
                 }
-                return Common.getFilefromNet("http://rfdesign.com.au/firmware/radio.rfd900a.hex", firmwarefile);
+                return Common.getFilefromNet("http://firmware.ardupilot.org/SiK/stable/radio.rfd900a.hex", firmwarefile);
             }
             if (device == Uploader.Board.DEVICE_ID_RFD900U)
             {
@@ -113,7 +114,7 @@ S15: MAX_WINDOW=131
                 {
                     return Common.getFilefromNet("http://rfdesign.com.au/firmware/radio~rfd900u.ihx", firmwarefile);
                 }
-                return Common.getFilefromNet("http://rfdesign.com.au/firmware/radio~rfd900u.ihx", firmwarefile);
+                return Common.getFilefromNet("http://firmware.ardupilot.org/SiK/stable/radio~rfd900u.ihx", firmwarefile);
             }
             if (device == Uploader.Board.DEVICE_ID_RFD900P)
             {
@@ -121,7 +122,7 @@ S15: MAX_WINDOW=131
                 {
                     return Common.getFilefromNet("http://rfdesign.com.au/firmware/radio~rfd900p.ihx", firmwarefile);
                 }
-                return Common.getFilefromNet("http://rfdesign.com.au/firmware/radio~rfd900p.ihx", firmwarefile);
+                return Common.getFilefromNet("http://firmware.ardupilot.org/SiK/stable/radio~rfd900p.ihx", firmwarefile);
             }
             return false;
         }
@@ -170,6 +171,66 @@ S15: MAX_WINDOW=131
             }
         }
 
+        bool upload_xmodem(ICommsSerial comPort)
+        {
+            // try xmodem mode
+            // xmodem - short cts to ground
+            try
+            {
+                uploader_LogEvent("Trying XModem Mode");
+                //comPort.BaudRate = 57600;
+                comPort.BaudRate = MainV2.comPort.BaseStream.BaudRate;
+                comPort.ReadTimeout = 1000;
+
+                Thread.Sleep(2000);
+                var tempd = comPort.ReadExisting();
+                Console.WriteLine(tempd);
+                comPort.Write("U");
+                Thread.Sleep(1000);
+                var resp1 = Serial_ReadLine(comPort); // echo
+                var resp2 = Serial_ReadLine(comPort); // echo 2
+                var tempd2 = comPort.ReadExisting(); // posibly bootloader info / use to sync
+                // identify
+                comPort.Write("i");
+                // responce is rfd900....
+                var resp3 = Serial_ReadLine(comPort); //echo
+                var resp4 = Serial_ReadLine(comPort); // newline
+                var resp5 = Serial_ReadLine(comPort); // bootloader info
+                uploader_LogEvent(resp5);
+                if (resp5.Contains("RFD900"))
+                {
+                    // start upload
+                    comPort.Write("u");
+                    var resp6 = Serial_ReadLine(comPort); // echo
+                    var resp7 = Serial_ReadLine(comPort); // Ready
+                    if (resp7.Contains("Ready"))
+                    {
+                        comPort.ReadTimeout = 3500;
+                        // responce is C
+                        var isC = comPort.ReadByte();
+                        var temp = comPort.ReadExisting();
+                        if (isC == 'C')
+                        {
+                            XModem.LogEvent += uploader_LogEvent;
+                            XModem.ProgressEvent += uploader_ProgressEvent;
+                            // start file send
+                            XModem.Upload(@"SiK900x.bin",
+                                comPort);
+                            XModem.LogEvent -= uploader_LogEvent;
+                            XModem.ProgressEvent -= uploader_ProgressEvent;
+                            return true;
+                        }
+                    }
+                }
+            }
+            catch (Exception ex2)
+            {
+                log.Error(ex2);
+            }
+
+            return false;
+        }
+
         private void BUT_upload_Click(object sender, EventArgs e)
         {
             UploadFW(false);
@@ -185,7 +246,7 @@ S15: MAX_WINDOW=131
             {
                 try
                 {
-                    comPort = new MAVLinkSerialPort(MainV2.comPort, 0); //MAVLink.SERIAL_CONTROL_DEV.TELEM1);
+                    getTelemPortWithRadio(ref comPort);
 
                     uploader.PROG_MULTI_MAX = 64;
                 }
@@ -220,8 +281,17 @@ S15: MAX_WINDOW=131
             // attempt bootloader mode
             try
             {
+                if (upload_xmodem(comPort))
+                {
+                    comPort.Close();
+                    return;
+                }
+
+                comPort.BaudRate = 115200;
+
                 uploader_ProgressEvent(0);
                 uploader_LogEvent("Trying Bootloader Mode");
+
                 uploader.port = comPort;
                 uploader.connect_and_sync();
 
@@ -231,8 +301,10 @@ S15: MAX_WINDOW=131
                 uploader_LogEvent("In Bootloader Mode");
                 bootloadermode = true;
             }
-            catch
+            catch (Exception ex1)
             {
+                log.Error(ex1);
+
                 // cleanup bootloader mode fail, and try firmware mode
                 comPort.Close();
                 if (MainV2.comPort.BaseStream.IsOpen)
@@ -280,8 +352,22 @@ S15: MAX_WINDOW=131
                     }
                 }
 
-                // force sync after changing baudrate
-                uploader.connect_and_sync();
+                if (upload_xmodem(comPort))
+                {
+                    comPort.Close();
+                    return;
+                }
+
+                try
+                {
+                    // force sync after changing baudrate
+                    uploader.connect_and_sync();
+                }
+                catch
+                {
+                    CustomMessageBox.Show("Failed to sync with Radio");
+                    goto exit;
+                }
 
                 var device = Uploader.Board.FAILED;
                 var freq = Uploader.Frequency.FAILED;
@@ -398,9 +484,7 @@ S15: MAX_WINDOW=131
             {
                 if (MainV2.comPort.BaseStream.IsOpen)
                 {
-                    comPort = new MAVLinkSerialPort(MainV2.comPort, 0); //MAVLink.SERIAL_CONTROL_DEV.TELEM1);
-
-                    comPort.BaudRate = 57600;
+                    getTelemPortWithRadio(ref comPort);
                 }
                 else
                 {
@@ -429,6 +513,16 @@ S15: MAX_WINDOW=131
 
                 lbl_status.Text = "Doing Command";
 
+                // set encryption keys at the same time, so if we are enabled we dont lose comms.
+                if (RENCRYPTION_LEVEL.Checked)
+                {
+                    doCommand(comPort, "RT&E=" + txt_Raeskey.Text.PadRight(32, '0'), true);
+                }
+                if (ENCRYPTION_LEVEL.Checked)
+                {
+                    doCommand(comPort, "AT&E=" + txt_aeskey.Text.PadRight(32, '0'), true);
+                }
+
                 if (RTI.Text != "")
                 {
                     // remote
@@ -444,7 +538,9 @@ S15: MAX_WINDOW=131
 
                             if (values.Length == 3)
                             {
-                                var controls = Controls.Find("R" + values[0].Trim(), true);
+                                values[1] = values[1].Replace("/", "_");
+
+                                var controls = groupBoxRemote.Controls.Find("R" + values[1].Trim(), true);
 
                                 if (controls.Length > 0)
                                 {
@@ -469,7 +565,7 @@ S15: MAX_WINDOW=131
                                     else if (controls[0] is TextBox)
                                     {
                                     }
-                                    else if (controls[0].Name.Contains("S6")) //
+                                    else if (controls[0].Name.Contains("MAVLINK")) //
                                     {
                                         if (((ComboBox) controls[0]).SelectedValue.ToString() != values[2].Trim())
                                         {
@@ -507,18 +603,13 @@ S15: MAX_WINDOW=131
                         }
                     }
 
-                    // write it
-                    doCommand(comPort, "RT&W");
-
-                    // return to normal mode
-                    doCommand(comPort, "RTZ");
-
                     Sleep(100);
                 }
 
                 comPort.DiscardInBuffer();
                 {
                     //local
+
                     var answer = doCommand(comPort, "ATI5", true);
 
                     var items = answer.Split(new[] {'\n'}, StringSplitOptions.RemoveEmptyEntries);
@@ -531,7 +622,9 @@ S15: MAX_WINDOW=131
 
                             if (values.Length == 3)
                             {
-                                var controls = Controls.Find(values[0].Trim(), true);
+                                values[1] = values[1].Replace("/", "_");
+
+                                var controls = groupBoxLocal.Controls.Find(values[1].Trim(), true);
 
                                 if (controls.Length > 0)
                                 {
@@ -556,7 +649,7 @@ S15: MAX_WINDOW=131
                                     else if (controls[0] is TextBox)
                                     {
                                     }
-                                    else if (controls[0].Name.Contains("S6")) //
+                                    else if (controls[0].Name.Contains("MAVLINK")) //
                                     {
                                         if (((ComboBox) controls[0]).SelectedValue.ToString() != values[2].Trim())
                                         {
@@ -594,6 +687,15 @@ S15: MAX_WINDOW=131
                         }
                     }
 
+                    if (RTI.Text != "")
+                    {
+                        // write it
+                        doCommand(comPort, "RT&W");
+
+                        // return to normal mode
+                        doCommand(comPort, "RTZ");
+                    }
+
                     // write it
                     doCommand(comPort, "AT&W");
 
@@ -629,19 +731,48 @@ S15: MAX_WINDOW=131
             return list;
         }
 
+        void getTelemPortWithRadio(ref ICommsSerial comPort)
+        {
+            // try telem1
+
+            comPort = new MAVLinkSerialPort(MainV2.comPort, (int)MAVLink.SERIAL_CONTROL_DEV.TELEM1);
+
+            comPort.ReadTimeout = 4000;
+
+            comPort.Open();
+
+            if (doConnect(comPort))
+            {
+                return;
+            }
+
+            comPort.Close();
+
+            // try telem2
+
+            comPort = new MAVLinkSerialPort(MainV2.comPort, (int)MAVLink.SERIAL_CONTROL_DEV.TELEM2);
+
+            comPort.ReadTimeout = 4000;
+
+            comPort.Open();
+
+            if (doConnect(comPort))
+            {
+                return;
+            }
+
+            comPort.Close();
+        }
 
         private void BUT_getcurrent_Click(object sender, EventArgs e)
         {
             ICommsSerial comPort = new SerialPort();
 
-
             try
             {
                 if (MainV2.comPort.BaseStream.IsOpen)
                 {
-                    comPort = new MAVLinkSerialPort(MainV2.comPort, 0); //MAVLink.SERIAL_CONTROL_DEV.TELEM1);
-
-                    comPort.BaudRate = 57600;
+                    getTelemPortWithRadio(ref comPort);
                 }
                 else
                 {
@@ -674,8 +805,6 @@ S15: MAX_WINDOW=131
 
                     ATI.Text = doCommand(comPort, "ATI");
 
-                    RTI.Text = doCommand(comPort, "RTI");
-
                     var freq =
                         (Uploader.Frequency)
                             Enum.Parse(typeof (Uploader.Frequency), doCommand(comPort, "ATI3"));
@@ -686,51 +815,44 @@ S15: MAX_WINDOW=131
                     ATI3.Text = freq.ToString();
 
                     ATI2.Text = board.ToString();
-                    try
-                    {
-                        var resp = doCommand(comPort, "RTI2");
-                        if (resp.Trim() != "")
-                            RTI2.Text =
-                                ((Uploader.Board) Enum.Parse(typeof (Uploader.Board), resp)).ToString();
-                    }
-                    catch
-                    {
-                    }
+
                     // 8 and 9
                     if (freq == Uploader.Frequency.FREQ_915)
                     {
-                        S8.DataSource = Range(895000, 1000, 935000);
-                        RS8.DataSource = Range(895000, 1000, 935000);
+                        MIN_FREQ.DataSource = Range(895000, 1000, 935000);
+                        RMIN_FREQ.DataSource = Range(895000, 1000, 935000);
 
-                        S9.DataSource = Range(895000, 1000, 935000);
-                        RS9.DataSource = Range(895000, 1000, 935000);
+                        MAX_FREQ.DataSource = Range(895000, 1000, 935000);
+                        RMAX_FREQ.DataSource = Range(895000, 1000, 935000);
                     }
                     else if (freq == Uploader.Frequency.FREQ_433)
                     {
-                        S8.DataSource = Range(414000, 50, 460000);
-                        RS8.DataSource = Range(414000, 50, 460000);
+                        MIN_FREQ.DataSource = Range(414000, 50, 460000);
+                        RMIN_FREQ.DataSource = Range(414000, 50, 460000);
 
-                        S9.DataSource = Range(414000, 50, 460000);
-                        RS9.DataSource = Range(414000, 50, 460000);
+                        MAX_FREQ.DataSource = Range(414000, 50, 460000);
+                        RMAX_FREQ.DataSource = Range(414000, 50, 460000);
                     }
                     else if (freq == Uploader.Frequency.FREQ_868)
                     {
-                        S8.DataSource = Range(849000, 1000, 889000);
-                        RS8.DataSource = Range(849000, 1000, 889000);
+                        MIN_FREQ.DataSource = Range(849000, 1000, 889000);
+                        RMIN_FREQ.DataSource = Range(849000, 1000, 889000);
 
-                        S9.DataSource = Range(849000, 1000, 889000);
-                        RS9.DataSource = Range(849000, 1000, 889000);
+                        MAX_FREQ.DataSource = Range(849000, 1000, 889000);
+                        RMAX_FREQ.DataSource = Range(849000, 1000, 889000);
                     }
 
                     if (board == Uploader.Board.DEVICE_ID_RFD900 ||
                         board == Uploader.Board.DEVICE_ID_RFD900A
                         || board == Uploader.Board.DEVICE_ID_RFD900P ||
-                        board == Uploader.Board.DEVICE_ID_RFD900U)
+                        board == Uploader.Board.DEVICE_ID_RFD900U ||
+                        board == Uploader.Board.DEVICE_ID_RFD900Plus)
                     {
-                        S4.DataSource = Range(1, 1, 30);
-                        RS4.DataSource = Range(1, 1, 30);
+                        TXPOWER.DataSource = Range(1, 1, 30);
+                        RTXPOWER.DataSource = Range(1, 1, 30);
                     }
 
+                    txt_aeskey.Text = doCommand(comPort, "AT&E?").Trim();
 
                     RSSI.Text = doCommand(comPort, "ATI7").Trim();
 
@@ -748,7 +870,9 @@ S15: MAX_WINDOW=131
 
                             if (values.Length == 3)
                             {
-                                var controls = Controls.Find(values[0].Trim(), true);
+                                values[1] = values[1].Replace("/", "_");
+
+                                var controls = groupBoxLocal.Controls.Find(values[1].Trim(), true);
 
                                 if (controls.Length > 0)
                                 {
@@ -762,7 +886,7 @@ S15: MAX_WINDOW=131
                                     {
                                         ((TextBox) controls[0]).Text = values[2].Trim();
                                     }
-                                    else if (controls[0].Name.Contains("S6")) //
+                                    else if (controls[0].Name.Contains("MAVLINK")) //
                                     {
                                         var ans = Enum.Parse(typeof (mavlink_option), values[2].Trim());
                                         ((ComboBox) controls[0]).Text = ans.ToString();
@@ -777,13 +901,28 @@ S15: MAX_WINDOW=131
                     }
 
                     // remote
-                    foreach (Control ctl in groupBox2.Controls)
+                    foreach (Control ctl in groupBoxRemote.Controls)
                     {
-                        if (ctl.Name.StartsWith("RS") && ctl.Name != "RSSI")
+                        if (ctl.Name != "RSSI")
                             ctl.ResetText();
                     }
 
                     comPort.DiscardInBuffer();
+
+                    RTI.Text = doCommand(comPort, "RTI");
+
+                    try
+                    {
+                        var resp = doCommand(comPort, "RTI2");
+                        if (resp.Trim() != "")
+                            RTI2.Text =
+                                ((Uploader.Board)Enum.Parse(typeof(Uploader.Board), resp)).ToString();
+                    }
+                    catch
+                    {
+                    }
+
+                    txt_Raeskey.Text = doCommand(comPort, "RT&E?").Trim();
 
                     lbl_status.Text = "Doing Command RTI5";
 
@@ -799,7 +938,9 @@ S15: MAX_WINDOW=131
 
                             if (values.Length == 3)
                             {
-                                var controls = Controls.Find("R" + values[0].Trim(), true);
+                                values[1] = values[1].Replace("/", "_");
+
+                                var controls = groupBoxRemote.Controls.Find("R" + values[1].Trim(), true);
 
                                 if (controls.Length == 0)
                                     continue;
@@ -814,7 +955,7 @@ S15: MAX_WINDOW=131
                                 {
                                     ((TextBox) controls[0]).Text = values[2].Trim();
                                 }
-                                else if (controls[0].Name.Contains("S6")) //
+                                else if (controls[0].Name.Contains("MAVLINK")) //
                                 {
                                     var ans = Enum.Parse(typeof (mavlink_option), values[2].Trim());
                                     ((ComboBox) controls[0]).Text = ans.ToString();
@@ -974,7 +1115,11 @@ S15: MAX_WINDOW=131
                 Sleep(1500, comPort);
                 comPort.DiscardInBuffer();
                 // send config string
-                comPort.Write("+++");
+                comPort.Write("+");
+                Sleep(200, comPort);
+                comPort.Write("+");
+                Sleep(200, comPort);
+                comPort.Write("+");
                 Sleep(1500, comPort);
                 // check for config response "OK"
                 log.Info("Connect btr " + comPort.BytesToRead + " baud " + comPort.BaudRate);
@@ -1024,14 +1169,16 @@ S15: MAX_WINDOW=131
 
         private void BUT_Syncoptions_Click(object sender, EventArgs e)
         {
-            RS2.Text = S2.Text;
-            RS3.Text = S3.Text;
-            RS5.Checked = S5.Checked;
-            RS6.Text = S6.Text;
-            RS8.Text = S8.Text;
-            RS9.Text = S9.Text;
-            RS10.Text = S10.Text;
-            RS15.Text = S15.Text;
+            RAIR_SPEED.Text = AIR_SPEED.Text;
+            RNETID.Text = NETID.Text;
+            RECC.Checked = ECC.Checked;
+            RMAVLINK.Text = MAVLINK.Text;
+            RMIN_FREQ.Text = MIN_FREQ.Text;
+            RMAX_FREQ.Text = MAX_FREQ.Text;
+            RNUM_CHANNELS.Text = NUM_CHANNELS.Text;
+            RMAX_WINDOW.Text = MAX_WINDOW.Text;
+            RENCRYPTION_LEVEL.Checked = ENCRYPTION_LEVEL.Checked;
+            txt_Raeskey.Text = txt_aeskey.Text;
         }
 
         private void linkLabel1_LinkClicked(object sender, LinkLabelLinkClickedEventArgs e)
@@ -1111,20 +1258,20 @@ red LED solid - in firmware update mode");
 
         private void linkLabel_mavlink_LinkClicked(object sender, LinkLabelLinkClickedEventArgs e)
         {
-            S6.SelectedValue = 1;
-            S15.Text = 131.ToString();
+            MAVLINK.SelectedValue = 1;
+            MAX_WINDOW.Text = 131.ToString();
 
-            RS6.SelectedValue = 1;
-            RS15.Text = 131.ToString();
+            RMAVLINK.SelectedValue = 1;
+            RMAX_WINDOW.Text = 131.ToString();
         }
 
         private void linkLabel_lowlatency_LinkClicked(object sender, LinkLabelLinkClickedEventArgs e)
         {
-            S6.SelectedValue = 2;
-            S15.Text = 33.ToString();
+            MAVLINK.SelectedValue = 2;
+            MAX_WINDOW.Text = 33.ToString();
 
-            RS6.SelectedValue = 2;
-            RS15.Text = 33.ToString();
+            RMAVLINK.SelectedValue = 2;
+            RMAX_WINDOW.Text = 33.ToString();
         }
 
         private enum mavlink_option
@@ -1132,6 +1279,17 @@ red LED solid - in firmware update mode");
             RawData = 0,
             Mavlink = 1,
             LowLatency = 2
+        }
+
+        private void txt_aeskey_TextChanged(object sender, EventArgs e)
+        {
+            string item = txt_aeskey.Text;
+            UInt64 n = 0;
+            if (!(Regex.IsMatch(item, "^[0-9a-fA-F]+$")))
+            {
+                txt_aeskey.Text = item.Remove(item.Length - 1, 1);
+                txt_aeskey.SelectionStart = txt_aeskey.Text.Length;
+            }
         }
     }
 }

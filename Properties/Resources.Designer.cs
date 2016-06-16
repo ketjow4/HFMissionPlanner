@@ -1130,6 +1130,16 @@ namespace MissionPlanner.Properties {
         }
         
         /// <summary>
+        ///   Looks up a localized resource of type System.Drawing.Icon similar to (Icon).
+        /// </summary>
+        public static System.Drawing.Icon mpdesktop {
+            get {
+                object obj = ResourceManager.GetObject("mpdesktop", resourceCulture);
+                return ((System.Drawing.Icon)(obj));
+            }
+        }
+        
+        /// <summary>
         ///   Looks up a localized resource of type System.Drawing.Bitmap.
         /// </summary>
         public static System.Drawing.Bitmap new_3DR_04 {
@@ -1285,6 +1295,16 @@ namespace MissionPlanner.Properties {
         public static System.Drawing.Bitmap px4 {
             get {
                 object obj = ResourceManager.GetObject("px4", resourceCulture);
+                return ((System.Drawing.Bitmap)(obj));
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized resource of type System.Drawing.Bitmap.
+        /// </summary>
+        public static System.Drawing.Bitmap PX4FLOW1 {
+            get {
+                object obj = ResourceManager.GetObject("PX4FLOW1", resourceCulture);
                 return ((System.Drawing.Bitmap)(obj));
             }
         }
@@ -1455,6 +1475,16 @@ namespace MissionPlanner.Properties {
         public static System.Drawing.Bitmap quadx {
             get {
                 object obj = ResourceManager.GetObject("quadx", resourceCulture);
+                return ((System.Drawing.Bitmap)(obj));
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized resource of type System.Drawing.Bitmap.
+        /// </summary>
+        public static System.Drawing.Bitmap redsinglecopter2 {
+            get {
+                object obj = ResourceManager.GetObject("redsinglecopter2", resourceCulture);
                 return ((System.Drawing.Bitmap)(obj));
             }
         }

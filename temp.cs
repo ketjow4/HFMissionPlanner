@@ -1170,7 +1170,19 @@ namespace MissionPlanner
         private void but_mavserialport_Click(object sender, EventArgs e)
         {
             if (comport != null)
+            {
                 comport.Close();
+                if (client != null && client.Connected)
+                {
+                    client.Close();
+                }
+
+                if (listener != null)
+                {
+                    listener.Stop();
+                }
+                return;
+            }
 
             try
             {
@@ -1196,56 +1208,62 @@ namespace MissionPlanner
 
         private void DoAcceptTcpClientCallback(IAsyncResult ar)
         {
-            // Get the listener that handles the client request.
-            TcpListener listener = (TcpListener) ar.AsyncState;
-
-            listener.BeginAcceptTcpClient(new AsyncCallback(DoAcceptTcpClientCallback), listener);
-
-            if (client != null && client.Connected)
-                return;
-
-            // End the operation and display the received data on  
-            // the console.
-            using (
-                client = listener.EndAcceptTcpClient(ar))
+            try
             {
-                NetworkStream stream = client.GetStream();
+                // Get the listener that handles the client request.
+                TcpListener listener = (TcpListener) ar.AsyncState;
 
-                if (!comport.IsOpen)
-                    comport.Open();
+                listener.BeginAcceptTcpClient(new AsyncCallback(DoAcceptTcpClientCallback), listener);
 
-                while (client.Connected && comport.IsOpen)
+                if (client != null && client.Connected)
+                    return;
+
+                // End the operation and display the received data on  
+                // the console.
+                using (
+                    client = listener.EndAcceptTcpClient(ar))
                 {
-                    while (stream.DataAvailable)
+                    NetworkStream stream = client.GetStream();
+
+                    if (!comport.IsOpen)
+                        comport.Open();
+
+                    while (client.Connected && comport.IsOpen)
                     {
-                        var data = new byte[4096];
-                        try
+                        while (stream.DataAvailable)
                         {
-                            int len = stream.Read(data, 0, data.Length);
+                            var data = new byte[4096];
+                            try
+                            {
+                                int len = stream.Read(data, 0, data.Length);
 
-                            comport.Write(data, 0, len);
+                                comport.Write(data, 0, len);
+                            }
+                            catch
+                            {
+                            }
                         }
-                        catch
+
+                        while (comport.BytesToRead > 0)
                         {
+                            var data = new byte[4096];
+                            try
+                            {
+                                int len = comport.Read(data, 0, data.Length);
+
+                                stream.Write(data, 0, len);
+                            }
+                            catch
+                            {
+                            }
                         }
+
+                        Thread.Sleep(1);
                     }
-
-                    while (comport.BytesToRead > 0)
-                    {
-                        var data = new byte[4096];
-                        try
-                        {
-                            int len = comport.Read(data, 0, data.Length);
-
-                            stream.Write(data, 0, len);
-                        }
-                        catch
-                        {
-                        }
-                    }
-
-                    Thread.Sleep(1);
                 }
+            }
+            catch
+            {
             }
         }
 
@@ -1512,7 +1530,7 @@ namespace MissionPlanner
 
         private void but_reboot_Click(object sender, EventArgs e)
         {
-            MainV2.comPort.doReboot(false);
+            MainV2.comPort.doReboot(false, true);
         }
 
         private void BUT_QNH_Click(object sender, EventArgs e)
@@ -1642,10 +1660,42 @@ namespace MissionPlanner
 
         private void but_signkey_Click(object sender, EventArgs e)
         {
+            AuthKeys auth = new AuthKeys();
+
+            auth.Show();
+
+            return;
+
             string key = "this is an example";
             InputBox.Show("Signing Key", "Please enter your pass phrase", ref key);
 
             MainV2.comPort.setupSigning(key);
+        }
+
+        private void but_optflowcalib_Click(object sender, EventArgs e)
+        {
+            var test = new Form();
+            var imagebox = new PictureBox();
+            imagebox.Dock = DockStyle.Fill;
+            imagebox.SizeMode = PictureBoxSizeMode.Zoom;
+            test.Controls.Add(imagebox);
+
+            test.Show();
+
+            OpticalFlow flow = new OpticalFlow(MainV2.comPort);
+
+            // disable on close form
+            test.Closed += (o, args) =>
+            {
+                flow.CalibrationMode(false);
+                flow.Close();
+            };
+
+            // enable calibration mode
+            flow.CalibrationMode(true);
+
+            // setup bitmap to screen
+            flow.newImage += (s, eh) => imagebox.Image = (Image)eh.Image.Clone();
         }
     }
 }

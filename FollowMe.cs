@@ -182,7 +182,7 @@ namespace MissionPlanner
 
                         Locationwp gotohere = new Locationwp();
 
-                        gotohere.id = (byte) MAVLink.MAV_CMD.WAYPOINT;
+                        gotohere.id = (ushort) MAVLink.MAV_CMD.WAYPOINT;
                         gotohere.alt = (float) (gotolocation.Alt);
                         gotohere.lat = (gotolocation.Lat);
                         gotohere.lng = (gotolocation.Lng);
@@ -201,7 +201,7 @@ namespace MissionPlanner
                             {
                                 MainV2.comPort.giveComport = true;
 
-                                MainV2.comPort.setGuidedModeWP(gotohere);
+                                MainV2.comPort.setGuidedModeWP(gotohere, false);
 
                                 MainV2.comPort.giveComport = false;
                             }

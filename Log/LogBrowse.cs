@@ -12,6 +12,7 @@ using ZedGraph; // Graphs
 using System.Xml;
 using System.Collections;
 using System.Text.RegularExpressions;
+using System.Threading;
 using MissionPlanner.Controls;
 using GMap.NET;
 using GMap.NET.WindowsForms;
@@ -25,7 +26,7 @@ namespace MissionPlanner.Log
         private static readonly ILog log = LogManager.GetLogger(MethodBase.GetCurrentMethod().DeclaringType);
         DataTable m_dtCSV = new DataTable();
 
-        CollectionBuffer<string> logdata;
+        CollectionBuffer logdata;
         Hashtable logdatafilter = new Hashtable();
         Hashtable seenmessagetypes = new Hashtable();
 
@@ -145,6 +146,7 @@ namespace MissionPlanner.Log
         {
             public string type;
             public string field;
+            public string expression;
             public bool left = true;
         }
 
@@ -358,6 +360,8 @@ namespace MissionPlanner.Log
         {
             InitializeComponent();
 
+            ThemeManager.ApplyThemeTo(this);
+
             mapoverlay = new GMapOverlay("overlay");
             markeroverlay = new GMapOverlay("markers");
 
@@ -444,20 +448,28 @@ namespace MissionPlanner.Log
                 {
                     var matchs = Regex.Matches(item.Trim(), @"^([A-z0-9_]+)\.([A-z0-9_]+)[:2]*$");
 
-                    // there is a item we dont understand/abandon it
-                    if (matchs.Count == 0)
-                        break;
+                    if (matchs.Count > 0)
+                    {
+                        foreach (Match match in matchs)
+                        {
+                            var temp = new displayitem();
+                            // right axis
+                            if (item.EndsWith(":2"))
+                                temp.left = false;
 
-                    foreach (Match match in matchs)
+                            temp.type = match.Groups[1].Value.ToString();
+                            temp.field = match.Groups[2].Value.ToString();
+
+                            list.Add(temp);
+                        }
+                    }
+                    else
                     {
                         var temp = new displayitem();
-                        // right axis
                         if (item.EndsWith(":2"))
                             temp.left = false;
-
-                        temp.type = match.Groups[1].Value.ToString();
-                        temp.field = match.Groups[2].Value.ToString();
-
+                        temp.expression = item;
+                        temp.type = item;
                         list.Add(temp);
                     }
                 }
@@ -503,14 +515,33 @@ namespace MissionPlanner.Log
                     openFileDialog1.Filter = "Log Files|*.log;*.bin";
                     openFileDialog1.FilterIndex = 2;
                     openFileDialog1.RestoreDirectory = true;
+                    openFileDialog1.Multiselect = true;
 
                     openFileDialog1.InitialDirectory = Settings.Instance.LogDir;
 
                     if (openFileDialog1.ShowDialog() == DialogResult.OK)
                     {
-                        logfilename = openFileDialog1.FileName;
-
-                        LoadLog(logfilename);
+                        int a = 0;
+                        foreach (var fileName in openFileDialog1.FileNames)
+                        {
+                            if (a == 0)
+                            {
+                                // load first file
+                                logfilename = fileName;
+                                ThreadPool.QueueUserWorkItem(o => LoadLog(logfilename));
+                            }
+                            else
+                            {
+                                // load additional files in new windows
+                                if (File.Exists(fileName))
+                                {
+                                    LogBrowse browse = new LogBrowse();
+                                    browse.logfilename = fileName;
+                                    browse.Show(this);
+                                }
+                            }
+                            a++;
+                        }
                     }
                     else
                     {
@@ -521,7 +552,7 @@ namespace MissionPlanner.Log
             }
             else
             {
-                LoadLog(logfilename);
+                ThreadPool.QueueUserWorkItem(o => LoadLog(logfilename));
             }
         }
 
@@ -537,11 +568,10 @@ namespace MissionPlanner.Log
 
                 log.Info("before read " + (GC.GetTotalMemory(false)/1024.0/1024.0));
 
-                logdata = new CollectionBuffer<string>(stream);
+                logdata = new CollectionBuffer(stream);
 
                 log.Info("got log lines " + (GC.GetTotalMemory(false)/1024.0/1024.0));
 
-                this.Text = "Log Browser - " + Path.GetFileName(FileName);
                 log.Info("about to create DataTable " + (GC.GetTotalMemory(false)/1024.0/1024.0));
                 m_dtCSV = new DataTable();
 
@@ -572,6 +602,23 @@ namespace MissionPlanner.Log
                 }
 
                 log.Info("Done " + (GC.GetTotalMemory(false)/1024.0/1024.0));
+
+                this.Invoke((Action) delegate {
+                                                  LoadLog2(FileName, logdata);
+                });
+            }
+            catch (Exception ex)
+            {
+                CustomMessageBox.Show("Failed to read File: " + ex.ToString());
+                return;
+            }
+        }
+
+        void LoadLog2(String FileName, CollectionBuffer logdata)
+        {
+            try
+            {
+                this.Text = "Log Browser - " + Path.GetFileName(FileName);
 
                 log.Info("set dgv datasourse " + (GC.GetTotalMemory(false)/1024.0/1024.0));
 
@@ -917,10 +964,9 @@ namespace MissionPlanner.Log
             GraphItem(type, fieldname, left);
         }
 
-        void GraphItem(string type, string fieldname, bool left = true, bool displayerror = true)
+        void GraphItem(string type, string fieldname, bool left = true, bool displayerror = true,
+            bool isexpression = false)
         {
-            double a = 0; // row counter
-            int error = 0;
             DataModifer dataModifier = new DataModifer();
             string nodeName = DataModifer.GetNodeName(type, fieldname);
 
@@ -953,27 +999,41 @@ namespace MissionPlanner.Log
                 }
             }
 
-            if (!dflog.logformat.ContainsKey(type))
+            if (!isexpression)
             {
-                if (displayerror)
-                    CustomMessageBox.Show(Strings.NoFMTMessage + type + " - " + fieldname, Strings.ERROR);
-                return;
-            }
+                if (!dflog.logformat.ContainsKey(type))
+                {
+                    if (displayerror)
+                        CustomMessageBox.Show(Strings.NoFMTMessage + type + " - " + fieldname, Strings.ERROR);
+                    return;
+                }
 
+                log.Info("Graphing " + type + " - " + fieldname);
+
+                Loading.ShowLoading("Graphing " + type + " - " + fieldname, this);
+
+                ThreadPool.QueueUserWorkItem(o => GraphItem_GetList(fieldname, type, dflog, dataModifier, left));
+            }
+            else
+            {
+                var list1 = DFLogScript.ProcessExpression(ref dflog, ref logdata, type);
+                GraphItem_AddCurve(list1, type, fieldname, left);
+            }
+        }
+
+        void GraphItem_GetList(string fieldname, string type, DFLog dflog, DataModifer dataModifier, bool left)
+        {
             int col = dflog.FindMessageOffset(type, fieldname);
 
             // field does not exist
             if (col == -1)
                 return;
 
-            log.Info("Graphing " + type + " - " + fieldname);
-
-            Loading.ShowLoading("Graphing " + type + " - " + fieldname, this);
-
             PointPairList list1 = new PointPairList();
 
-            string header = fieldname;
+            int error = 0;
 
+            double a = 0; // row counter
             double b = 0;
             DateTime screenupdate = DateTime.MinValue;
             double value_prev = 0;
@@ -992,7 +1052,8 @@ namespace MissionPlanner.Log
                 {
                     try
                     {
-                        double value = double.Parse(item.items[col], System.Globalization.CultureInfo.InvariantCulture);
+                        double value = double.Parse(item.items[col],
+                            System.Globalization.CultureInfo.InvariantCulture);
 
                         // abandon realy bad data
                         if (Math.Abs(value) > 3.15e8)
@@ -1048,10 +1109,16 @@ namespace MissionPlanner.Log
                     }
                 }
 
-
                 a++;
             }
 
+            Invoke((Action) delegate {
+                GraphItem_AddCurve(list1, type, fieldname, left);
+            });
+        }
+        
+        void GraphItem_AddCurve(PointPairList list1,string type, string header, bool left)
+        {
             if (list1.Count < 1)
             {
                 Loading.Close();
@@ -1602,6 +1669,8 @@ namespace MissionPlanner.Log
         {
             // clear existing lists
             zg1.GraphPane.CurveList.Clear();
+            // reset logname
+            logfilename = "";
             // reload
             LogBrowse_Load(sender, e);
         }
@@ -1874,7 +1943,14 @@ namespace MissionPlanner.Log
             {
                 try
                 {
-                    GraphItem(item.type, item.field, item.left, false);
+                    if (!string.IsNullOrEmpty(item.expression))
+                    {
+                        GraphItem(item.expression, "", item.left, false, true);
+                    }
+                    else
+                    {
+                        GraphItem(item.type, item.field, item.left, false);
+                    }
                 }
                 catch
                 {

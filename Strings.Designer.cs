@@ -88,6 +88,15 @@ namespace MissionPlanner {
         }
         
         /// <summary>
+        ///   Looks up a localized string similar to Bad KML File :.
+        /// </summary>
+        public static string Bad_KML_File {
+            get {
+                return ResourceManager.GetString("Bad_KML_File", resourceCulture);
+            }
+        }
+        
+        /// <summary>
         ///   Looks up a localized string similar to Bad Accel Health.
         /// </summary>
         public static string BadAccelHealth {
@@ -400,6 +409,15 @@ namespace MissionPlanner {
         public static string DISCONNECTc {
             get {
                 return ResourceManager.GetString("DISCONNECTc", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to Do you want to load this into the flight data screen?.
+        /// </summary>
+        public static string Do_you_want_to_load_this_into_the_flight_data_screen {
+            get {
+                return ResourceManager.GetString("Do_you_want_to_load_this_into_the_flight_data_screen", resourceCulture);
             }
         }
         
@@ -903,6 +921,15 @@ namespace MissionPlanner {
         }
         
         /// <summary>
+        ///   Looks up a localized string similar to Load data.
+        /// </summary>
+        public static string Load_data {
+            get {
+                return ResourceManager.GetString("Load_data", resourceCulture);
+            }
+        }
+        
+        /// <summary>
         ///   Looks up a localized string similar to Please click ok and move the autopilot around all axises in a circular motion.
         /// </summary>
         public static string MagCalibMsg {
@@ -945,6 +972,15 @@ namespace MissionPlanner {
         public static string NewFirmwareA {
             get {
                 return ResourceManager.GetString("NewFirmwareA", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to No valid heartbeats read from port.
+        /// </summary>
+        public static string No_valid_heartbeats_read_from_port {
+            get {
+                return ResourceManager.GetString("No_valid_heartbeats_read_from_port", resourceCulture);
             }
         }
         
@@ -1488,6 +1524,24 @@ namespace MissionPlanner {
         public static string YouAreUsingUnsupportedHardware {
             get {
                 return ResourceManager.GetString("YouAreUsingUnsupportedHardware", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to Zoom To.
+        /// </summary>
+        public static string Zoom_To {
+            get {
+                return ResourceManager.GetString("Zoom_To", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to Zoom to the center or the loaded file?.
+        /// </summary>
+        public static string Zoom_to_the_center_or_the_loaded_file {
+            get {
+                return ResourceManager.GetString("Zoom_to_the_center_or_the_loaded_file", resourceCulture);
             }
         }
     }

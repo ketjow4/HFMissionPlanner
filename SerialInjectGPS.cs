@@ -117,6 +117,27 @@ namespace MissionPlanner
                     return;
                 }
 
+                // inject init strings - m8p
+                if (true)
+                {
+                    var ubloxm8p_timepulse_60s_1m = new byte[]
+                    {
+                        0xB5, 0x62, 0x06, 0x71, 0x28, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x3C, 0x00,
+                        0x00, 0x00, 0x20, 0x4E, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x4A, 0x53
+                    };
+                    comPort.Write(ubloxm8p_timepulse_60s_1m, 0, ubloxm8p_timepulse_60s_1m.Length);
+                    var ubloxm8p_msg_f5_05_5s = new byte[]
+                    {0xB5, 0x62, 0x06, 0x01, 0x08, 0x00, 0xF5, 0x05, 0x00, 0x05, 0x00, 0x05, 0x00, 0x00, 0x13, 0x96};
+                    comPort.Write(ubloxm8p_msg_f5_05_5s, 0, ubloxm8p_msg_f5_05_5s.Length);
+                    var ubloxm8p_msg_f5_4d_1s = new byte[]
+                    {0xB5, 0x62, 0x06, 0x01, 0x08, 0x00, 0xF5, 0x4D, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00, 0x53, 0x6E};
+                    comPort.Write(ubloxm8p_msg_f5_4d_1s, 0, ubloxm8p_msg_f5_4d_1s.Length);
+                    var ubloxm8p_msg_f5_57_1s = new byte[]
+                    {0xB5, 0x62, 0x06, 0x01, 0x08, 0x00, 0xF5, 0x57, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00, 0x5D, 0xB4};
+                    comPort.Write(ubloxm8p_msg_f5_57_1s, 0, ubloxm8p_msg_f5_57_1s.Length);
+                }
+
                 t12 = new System.Threading.Thread(new System.Threading.ThreadStart(mainloop))
                 {
                     IsBackground = true,
@@ -149,6 +170,10 @@ namespace MissionPlanner
         {
             DateTime lastrecv = DateTime.MinValue;
             threadrun = true;
+
+            bool isrtcm = false;
+            bool issbp = false;
+
             while (threadrun)
             {
                 try
@@ -187,7 +212,8 @@ namespace MissionPlanner
                         bytes += read;
                         bps += read;
 
-                        MainV2.comPort.InjectGpsData(buffer, (byte) read);
+                        if (!(isrtcm || issbp))
+                            MainV2.comPort.InjectGpsData(buffer, (byte) read);
 
                         // check for valid rtcm packets
                         for (int a = 0; a < read; a++)
@@ -196,6 +222,8 @@ namespace MissionPlanner
                             // rtcm
                             if ((seen = rtcm3.Read(buffer[a])) > 0)
                             {
+                                isrtcm = true;
+                                MainV2.comPort.InjectGpsData(rtcm3.packet, (byte)rtcm3.length);
                                 if (!msgseen.ContainsKey(seen))
                                     msgseen[seen] = 0;
                                 msgseen[seen] = (int)msgseen[seen] + 1;
@@ -203,6 +231,8 @@ namespace MissionPlanner
                             // sbp
                             if ((seen = sbp.read(buffer[a])) > 0)
                             {
+                                issbp = true;
+                                MainV2.comPort.InjectGpsData(sbp.packet, (byte)sbp.length);
                                 if (!msgseen.ContainsKey(seen))
                                     msgseen[seen] = 0;
                                 msgseen[seen] = (int)msgseen[seen] + 1;

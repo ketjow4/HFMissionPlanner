@@ -71,7 +71,7 @@ namespace MissionPlanner.GCSViews
         CurveItem list10curve;
 
         internal static GMapOverlay tfrpolygons;
-        internal static GMapOverlay kmlpolygons;
+        public static GMapOverlay kmlpolygons;
         internal static GMapOverlay geofence;
         internal static GMapOverlay rallypointoverlay;
         internal static GMapOverlay photosoverlay;
@@ -1136,7 +1136,7 @@ namespace MissionPlanner.GCSViews
                                 if (plla.x == 0 || plla.y == 0)
                                     continue;
 
-                                if (plla.command == (byte) MAVLink.MAV_CMD.DO_SET_ROI)
+                                if (plla.command == (ushort)MAVLink.MAV_CMD.DO_SET_ROI)
                                 {
                                     addpolygonmarkerred(plla.seq.ToString(), plla.y, plla.x, (int) plla.z, Color.Red,
                                         routes);
@@ -1307,8 +1307,13 @@ namespace MissionPlanner.GCSViews
                                 {
                                     if (CameraOverlap)
                                     {
-                                        MainV2.comPort.MAV.GMapMarkerOverlapCount.Add(
-                                            ((GMapMarkerPhoto) mark).footprintpoly);
+                                        var marker = ((GMapMarkerPhoto) mark);
+                                        // abandon roll higher than 25 degrees
+                                        if (Math.Abs(marker.Roll) < 25)
+                                        {
+                                            MainV2.comPort.MAV.GMapMarkerOverlapCount.Add(
+                                                ((GMapMarkerPhoto) mark).footprintpoly);
+                                        }
                                     }
                                     if (a < (camcount-4))
                                         ((GMapMarkerPhoto)mark).drawfootprint = false;
@@ -1349,7 +1354,7 @@ namespace MissionPlanner.GCSViews
                             foreach (adsb.PointLatLngAltHdg plla in MainV2.instance.adsbPlanes.Values)
                             {
                                 // 30 seconds history
-                                if (((DateTime) MainV2.instance.adsbPlaneAge[plla.Tag]) > DateTime.Now.AddSeconds(-30))
+                                if (((DateTime) plla.Time) > DateTime.Now.AddSeconds(-30))
                                 {
                                     addMissionRouteMarker(new GMapMarkerADSBPlane(plla, plla.Heading)
                                     {
@@ -1379,42 +1384,9 @@ namespace MissionPlanner.GCSViews
                                 // draw the mavs seen on this port
                                 foreach (var MAV in port.MAVlist.GetMAVStates())
                                 {
-                                    PointLatLng portlocation = new PointLatLng(MAV.cs.lat, MAV.cs.lng);
+                                    var marker = Common.getMAVMarker(MAV);
 
-                                    if (MAV.aptype == MAVLink.MAV_TYPE.FIXED_WING)
-                                    {
-                                        addMissionRouteMarker(new GMapMarkerPlane(portlocation, MAV.cs.yaw,
-                                            MAV.cs.groundcourse, MAV.cs.nav_bearing, MAV.cs.target_bearing, MAV.cs.radius)
-                                        {
-                                            ToolTipText = MAV.cs.alt.ToString("0"),
-                                            ToolTipMode = MarkerTooltipMode.Always
-                                        });
-                                    }
-                                    else if (MAV.aptype == MAVLink.MAV_TYPE.GROUND_ROVER)
-                                    {
-                                        addMissionRouteMarker(new GMapMarkerRover(portlocation, MAV.cs.yaw,
-                                            MAV.cs.groundcourse, MAV.cs.nav_bearing, MAV.cs.target_bearing));
-                                    }
-                                    else if (MAV.aptype == MAVLink.MAV_TYPE.HELICOPTER)
-                                    {
-                                        addMissionRouteMarker(new GMapMarkerHeli(portlocation, MAV.cs.yaw,
-                                            MAV.cs.groundcourse, MAV.cs.nav_bearing));
-                                    }
-                                    else if (MAV.cs.firmware == MainV2.Firmwares.ArduTracker)
-                                    {
-                                        addMissionRouteMarker(new GMapMarkerAntennaTracker(portlocation, MAV.cs.yaw,
-                                            MAV.cs.target_bearing));
-                                    }
-                                    else if (MAV.cs.firmware == MainV2.Firmwares.ArduCopter2 || MAV.aptype == MAVLink.MAV_TYPE.QUADROTOR)
-                                    {
-                                        addMissionRouteMarker(new GMapMarkerQuad(portlocation, MAV.cs.yaw,
-                                            MAV.cs.groundcourse, MAV.cs.nav_bearing, MAV.sysid));
-                                    }
-                                    else
-                                    {
-                                        // unknown type
-                                        addMissionRouteMarker(new GMarkerGoogle(portlocation, GMarkerGoogleType.green_dot));
-                                    }
+                                    addMissionRouteMarker(marker);
                                 }
                             }
 
@@ -2039,7 +2011,7 @@ namespace MissionPlanner.GCSViews
 
             Locationwp gotohere = new Locationwp();
 
-            gotohere.id = (byte) MAVLink.MAV_CMD.WAYPOINT;
+            gotohere.id = (ushort) MAVLink.MAV_CMD.WAYPOINT;
             gotohere.alt = MainV2.comPort.MAV.GuidedMode.z; // back to m
             gotohere.lat = (MouseDownStart.Lat);
             gotohere.lng = (MouseDownStart.Lng);
@@ -3698,7 +3670,7 @@ namespace MissionPlanner.GCSViews
                                 using (tr = new StreamReader(logfile))
                                 {
                                     GC.Collect();
-                                    CollectionBuffer<string> temp = new CollectionBuffer<string>(tr.BaseStream);
+                                    CollectionBuffer temp = new CollectionBuffer(tr.BaseStream);
 
                                     uint a = 0;
                                     foreach (var line in temp)
@@ -3749,7 +3721,8 @@ namespace MissionPlanner.GCSViews
 
         private void Messagetabtimer_Tick(object sender, EventArgs e)
         {
-            if (messagecount != MainV2.comPort.MAV.cs.messages.Count)
+            var newmsgcount = MainV2.comPort.MAV.cs.messages.Count;
+            if (messagecount != newmsgcount)
             {
                 try
                 {
@@ -3757,7 +3730,7 @@ namespace MissionPlanner.GCSViews
                     MainV2.comPort.MAV.cs.messages.ForEach(x => { message.Insert(0, x + "\r\n"); });
                     txt_messagebox.Text = message.ToString();
 
-                    messagecount = MainV2.comPort.MAV.cs.messages.Count;
+                    messagecount = newmsgcount;
                 }
                 catch
                 {
@@ -3907,11 +3880,11 @@ namespace MissionPlanner.GCSViews
 
                         if (a < lastwpno && a != 0) // allow home
                         {
-                            if (wpdata.id != (byte) MAVLink.MAV_CMD.TAKEOFF)
-                                if (wpdata.id < (byte) MAVLink.MAV_CMD.LAST)
+                            if (wpdata.id != (ushort)MAVLink.MAV_CMD.TAKEOFF)
+                                if (wpdata.id < (ushort)MAVLink.MAV_CMD.LAST)
                                     continue;
 
-                            if (wpdata.id > (byte) MAVLink.MAV_CMD.DO_LAST)
+                            if (wpdata.id > (ushort)MAVLink.MAV_CMD.DO_LAST)
                                 continue;
                         }
 

@@ -16,6 +16,7 @@ using GMap.NET;
 using GMap.NET.WindowsForms;
 using GMap.NET.WindowsForms.Markers;
 using log4net;
+using MissionPlanner.GCSViews;
 using MissionPlanner.Properties;
 using MissionPlanner.Utilities;
 using ProjNet.CoordinateSystems;
@@ -35,6 +36,7 @@ namespace MissionPlanner
         static public Object thisLock = new Object();
 
         GMapOverlay routesOverlay;
+        GMapOverlay kmlpolygonsoverlay;
         List<PointLatLngAlt> list = new List<PointLatLngAlt>();
         List<PointLatLngAlt> grid;
 
@@ -115,6 +117,10 @@ namespace MissionPlanner
             public decimal repeatservo_pwm;
             public decimal repeatservo_cycle;
 
+            // do set servo
+            public decimal setservo_no;
+            public decimal setservo_low;
+            public decimal setservo_high;
         }
 
         // GridUI
@@ -125,6 +131,9 @@ namespace MissionPlanner
             InitializeComponent();
 
             map.MapProvider = plugin.Host.FDMapType;
+
+            kmlpolygonsoverlay = new GMapOverlay("kmlpolygons");
+            map.Overlays.Add(kmlpolygonsoverlay);
 
             routesOverlay = new GMapOverlay("routes");
             map.Overlays.Add(routesOverlay);
@@ -144,18 +153,27 @@ namespace MissionPlanner
             if (plugin.Host.config["distunits"] != null)
                 DistUnits = plugin.Host.config["distunits"].ToString();
 
-            CMB_startfrom.DataSource = Enum.GetNames(typeof(Grid.StartPosition));
+            CMB_startfrom.DataSource = Enum.GetNames(typeof (Grid.StartPosition));
             CMB_startfrom.SelectedIndex = 0;
 
             // set and angle that is good
-            NUM_angle.Value = (decimal)((getAngleOfLongestSide(list) + 360) % 360);
+            NUM_angle.Value = (decimal) ((getAngleOfLongestSide(list) + 360)%360);
             TXT_headinghold.Text = (Math.Round(NUM_angle.Value)).ToString();
 
             if (plugin.Host.cs.firmware == MainV2.Firmwares.ArduPlane)
-                NUM_UpDownFlySpeed.Value = (decimal)(12 * CurrentState.multiplierspeed);
+                NUM_UpDownFlySpeed.Value = (decimal) (12*CurrentState.multiplierspeed);
 
             map.MapScaleInfoEnabled = true;
             map.ScalePen = new Pen(Color.Orange);
+
+            foreach (var temp in FlightData.kmlpolygons.Polygons)
+            {
+                kmlpolygonsoverlay.Polygons.Add(new GMapPolygon(temp.Points, "") {Fill = Brushes.Transparent});
+            }
+            foreach (var temp in FlightData.kmlpolygons.Routes)
+            {
+                kmlpolygonsoverlay.Routes.Add(new GMapRoute(temp.Points,""));
+            }
         }
 
         private void GridUI_Load(object sender, EventArgs e)
@@ -264,6 +282,10 @@ namespace MissionPlanner
             num_reptpwm.Value = griddata.repeatservo_pwm;
             NUM_repttime.Value = griddata.repeatservo_cycle;
 
+            num_setservono.Value = griddata.setservo_no;
+            num_setservolow.Value = griddata.setservo_low;
+            num_setservohigh.Value = griddata.setservo_high;
+
             // Copter Settings
             NUM_copter_delay.Value = griddata.copter_delay;
             CHK_copter_headinghold.Checked = griddata.copter_headinghold_chk;
@@ -319,6 +341,10 @@ namespace MissionPlanner
             griddata.repeatservo_no = NUM_reptservo.Value;
             griddata.repeatservo_pwm = num_reptpwm.Value;
             griddata.repeatservo_cycle = NUM_repttime.Value;
+
+            griddata.setservo_no = num_setservono.Value;
+            griddata.setservo_low = num_setservolow.Value;
+            griddata.setservo_high = num_setservohigh.Value;
 
             return griddata;
         }
@@ -1564,9 +1590,14 @@ namespace MissionPlanner
                             {
                                 if (rad_repeatservo.Checked)
                                 {
-                                    AddWP(plla.Lng, plla.Lat, plla.Alt);
-                                    plugin.Host.AddWPtoList(MAVLink.MAV_CMD.DO_REPEAT_SERVO, (float) NUM_reptservo.Value,
-                                        (float)num_reptpwm.Value, 999, (float)NUM_repttime.Value, 0, 0, 0, gridobject);
+                                    if (!chk_stopstart.Checked)
+                                    {
+                                        AddWP(plla.Lng, plla.Lat, plla.Alt);
+                                        plugin.Host.AddWPtoList(MAVLink.MAV_CMD.DO_REPEAT_SERVO,
+                                            (float) NUM_reptservo.Value,
+                                            (float) num_reptpwm.Value, 1, (float) NUM_repttime.Value, 0, 0, 0,
+                                            gridobject);
+                                    }
                                 }
                                 if (rad_digicam.Checked)
                                 {
@@ -1604,6 +1635,43 @@ namespace MissionPlanner
                                                 0, 0, 0, 0, 0, 0, gridobject);
                                             startedtrigdist = true;
                                         }
+                                    }
+                                } 
+                                else if (rad_repeatservo.Checked)
+                                {
+                                    if (chk_stopstart.Checked)
+                                    {
+                                        if (plla.Tag == "SM")
+                                        {
+                                            plugin.Host.AddWPtoList(MAVLink.MAV_CMD.DO_REPEAT_SERVO,
+                                                (float)NUM_reptservo.Value,
+                                                (float)num_reptpwm.Value, 999, (float)NUM_repttime.Value, 0, 0, 0,
+                                                gridobject);
+                                        }
+                                        else if (plla.Tag == "ME")
+                                        {
+                                            plugin.Host.AddWPtoList(MAVLink.MAV_CMD.DO_REPEAT_SERVO,
+                                                (float)NUM_reptservo.Value,
+                                                (float)num_reptpwm.Value, 0, (float)NUM_repttime.Value, 0, 0, 0,
+                                                gridobject);
+                                        }
+                                    }
+                                }
+                                else if (rad_do_set_servo.Checked)
+                                {
+                                    if (plla.Tag == "SM")
+                                    {
+                                        plugin.Host.AddWPtoList(MAVLink.MAV_CMD.DO_SET_SERVO,
+                                            (float)num_setservono.Value,
+                                            (float)num_setservolow.Value, 0, 0, 0, 0, 0,
+                                            gridobject);
+                                    }
+                                    else if (plla.Tag == "ME")
+                                    {
+                                        plugin.Host.AddWPtoList(MAVLink.MAV_CMD.DO_SET_SERVO,
+                                            (float) num_setservono.Value,
+                                            (float) num_setservohigh.Value, 0, 0, 0, 0, 0,
+                                            gridobject);
                                     }
                                 }
                             }
@@ -1665,8 +1733,17 @@ namespace MissionPlanner
                 double fovha = 0;
                 double fovva = 0;
                 getFOVangle(ref fovha, ref fovva);
-                Settings.Instance["camera_fovh"] = fovha.ToString();
-                Settings.Instance["camera_fovv"] = fovva.ToString();
+
+                if (CHK_camdirection.Checked)
+                {
+                    Settings.Instance["camera_fovh"] = fovha.ToString();
+                    Settings.Instance["camera_fovv"] = fovva.ToString();
+                }
+                else
+                {
+                    Settings.Instance["camera_fovh"] = fovva.ToString();
+                    Settings.Instance["camera_fovv"] = fovha.ToString();
+                }
 
                 savesettings();
 

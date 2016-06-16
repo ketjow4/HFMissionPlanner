@@ -7,7 +7,7 @@ using System.Text;
 
 namespace MissionPlanner.Log
 {
-    public class CollectionBuffer<T> : IList<T>, ICollection<T>, IEnumerable<T>, IDisposable
+    public class CollectionBuffer : IList<String>, ICollection<String>, IEnumerable<String>, IDisposable
     {
         // used for binary log line conversion
         BinaryLog binlog = new BinaryLog();
@@ -23,8 +23,10 @@ namespace MissionPlanner.Log
 
         bool binary = false;
 
+        object locker = new object();
+
         int indexcachelineno = -1;
-        object currentindexcache = null;
+        String currentindexcache = null;
 
         public CollectionBuffer(Stream instream)
         {
@@ -78,11 +80,17 @@ namespace MissionPlanner.Log
 
                 _count = lineCount;
 
-                // build fmt line database
+                // build fmt line database to pre seed the FMT message
                 int amax = Math.Min(2000, _count - 1);
                 for (int a = 0; a < amax; a++)
                 {
                     dflog.GetDFItemFromLine(this[a].ToString(), a);
+                }
+
+                // build fmt line database using type
+                foreach (var item in GetEnumeratorType("FMT"))
+                {
+                    Console.WriteLine("Found FMT");
                 }
             }
             else
@@ -113,13 +121,6 @@ namespace MissionPlanner.Log
 
                 _count = lineCount;
 
-                // build fmt line database
-                int amax = Math.Min(2000, _count - 1);
-                for (int a = 0; a < amax; a++)
-                {
-                    dflog.GetDFItemFromLine(this[a].ToString(), a);
-                }
-
                 // create msg cache
                 int b = 0;
                 foreach (var item in this)
@@ -139,12 +140,12 @@ namespace MissionPlanner.Log
         }
 
 
-        public int IndexOf(T item)
+        public int IndexOf(String item)
         {
             throw new NotImplementedException();
         }
 
-        public void Insert(int index, T item)
+        public void Insert(int index, String item)
         {
             throw new NotImplementedException();
         }
@@ -154,54 +155,58 @@ namespace MissionPlanner.Log
             throw new NotImplementedException();
         }
 
-        public T this[int index]
+        public String this[int index]
         {
             get
             {
-                // return cached value is same index
-                if (indexcachelineno == index)
-                    return (T) currentindexcache;
-
-                long startoffset = linestartoffset[index];
-                long endoffset = startoffset;
-
-                if ((index + 1) >= linestartoffset.Count)
+                // prevent multi io to file
+                lock (locker)
                 {
-                    endoffset = basestream.Length;
+                    // return cached value is same index
+                    if (indexcachelineno == index)
+                        return currentindexcache;
+
+                    long startoffset = linestartoffset[index];
+                    long endoffset = startoffset;
+
+                    if ((index + 1) >= linestartoffset.Count)
+                    {
+                        endoffset = basestream.Length;
+                    }
+                    else
+                    {
+                        endoffset = linestartoffset[index + 1];
+                    }
+
+                    int length = (int) (endoffset - startoffset);
+
+                    if (linestartoffset[index] != basestream.Position)
+                        basestream.Seek(linestartoffset[index], SeekOrigin.Begin);
+
+                    if (binary)
+                    {
+                        var answer = binlog.ReadMessage(basestream);
+
+                        currentindexcache = answer;
+                        indexcachelineno = index;
+                    }
+                    else
+                    {
+                        byte[] data = new byte[length];
+
+                        basestream.Read(data, 0, length);
+
+                        currentindexcache = ASCIIEncoding.ASCII.GetString(data);
+                        indexcachelineno = index;
+                    }
+
+                    return currentindexcache;
                 }
-                else
-                {
-                    endoffset = linestartoffset[index + 1];
-                }
-
-                int length = (int) (endoffset - startoffset);
-
-                if (linestartoffset[index] != basestream.Position)
-                    basestream.Seek(linestartoffset[index], SeekOrigin.Begin);
-
-                if (binary)
-                {
-                    var answer = binlog.ReadMessage(basestream);
-
-                    currentindexcache = (object) answer;
-                    indexcachelineno = index;
-                }
-                else
-                {
-                    byte[] data = new byte[length];
-
-                    basestream.Read(data, 0, length);
-
-                    currentindexcache = (object) ASCIIEncoding.ASCII.GetString(data);
-                    indexcachelineno = index;
-                }
-
-                return (T) currentindexcache;
             }
             set { throw new NotImplementedException(); }
         }
 
-        public void Add(T item)
+        public void Add(String item)
         {
             throw new NotImplementedException();
         }
@@ -213,12 +218,12 @@ namespace MissionPlanner.Log
             linestartoffset.Clear();
         }
 
-        public bool Contains(T item)
+        public bool Contains(String item)
         {
             throw new NotImplementedException();
         }
 
-        public void CopyTo(T[] array, int arrayIndex)
+        public void CopyTo(String[] array, int arrayIndex)
         {
             throw new NotImplementedException();
         }
@@ -233,7 +238,7 @@ namespace MissionPlanner.Log
             get { return true; }
         }
 
-        public bool Remove(T item)
+        public bool Remove(String item)
         {
             throw new NotImplementedException();
         }
@@ -272,7 +277,7 @@ namespace MissionPlanner.Log
             }
         }
 
-        public IEnumerator<T> GetEnumerator()
+        public IEnumerator<String> GetEnumerator()
         {
             int position = 0; // state
             while (position < Count)
@@ -302,7 +307,7 @@ namespace MissionPlanner.Log
             }
         }
 
-        public T ReadLine()
+        public String ReadLine()
         {
             return this[indexcachelineno+1];
         }

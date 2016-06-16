@@ -8,13 +8,15 @@ using uint16_t = System.UInt16;
 using uint8_t = System.Byte;
 using int32_t = System.Int32;
 using int8_t = System.SByte;
-using System.IO.Ports;
 using System.Reflection;
 using System.Runtime.InteropServices;
+using MissionPlanner.Comms;
+using Org.BouncyCastle.Crypto.Paddings;
+using SerialPort = System.IO.Ports.SerialPort;
 
 namespace MissionPlanner.Utilities
 {
-    public class AP_GPS_GSOF
+    public class AP_GPS_GSOF : AP_GPS_base
     {
         const uint8_t GSOF_STX = 0x02;
         const uint8_t GSOF_ETX = 0x03;
@@ -50,11 +52,10 @@ namespace MissionPlanner.Utilities
 
         gsof_msg_parser gsof_msg = new gsof_msg_parser();
 
-        AP_GPS_SBF.GPS_State state = new AP_GPS_SBF.GPS_State();
-
         public AP_GPS_GSOF(string portname)
         {
-            var sport = new SerialPort(portname, 38400);
+            var sport = new TcpSerial();
+            //new SerialPort(portname, 38400);
 
             sport.Open();
 
@@ -215,16 +216,6 @@ namespace MissionPlanner.Utilities
             return false;
         }
 
-        private double ToDeg(double p)
-        {
-            return p*(180/Math.PI);
-        }
-
-        private double ToRad(double p)
-        {
-            return p*(Math.PI/180);
-        }
-
         private double SwapDouble(byte[] src, uint32_t pos)
         {
             uint8_t[] dst = new uint8_t[sizeof (double)];
@@ -295,14 +286,105 @@ namespace MissionPlanner.Utilities
             return (long) r;
         }
 
-        void fill_3d_velocity()
-        {
-            double gps_heading = ToRad(state.ground_course_cd*0.01);
 
-            state.velocity.X = state.ground_speed*(float) Math.Cos(gps_heading);
-            state.velocity.Y = state.ground_speed*(float) Math.Sin(gps_heading);
-            state.velocity.Z = 0;
-            state.have_vertical_velocity = false;
+        [StructLayout(LayoutKind.Sequential, Pack = 1)]
+        public struct rt27_6_27_epochHeader
+        {
+            public byte blockLength;
+            public ushort gpsWeek;
+            public UInt32 tmeasRCVR;
+            [MarshalAs(UnmanagedType.ByValArray, SizeConst = 3)]
+            public byte[] clockOffset;
+            public byte nSVs;
+            public byte epochFlags;
+            // if epochFlags & 2
+            [MarshalAs(UnmanagedType.ByValArray, SizeConst = 3)]
+            public byte[] gpsGlonassOffset;
+
+            // if epochFlags & 16
+            public byte raimInfo;
+        }
+
+        [StructLayout(LayoutKind.Sequential, Pack = 1)]
+        public struct rt27_6_27_sysOffsets
+        {
+            public byte blockLength;
+            public byte offsetHeader;
+            //public byte referenceSystem; // offsetHeader & 15;
+            //public byte numSystems; // offsetHeader >> 4 & 7
+            // length = numSystems
+            //[MarshalAs(UnmanagedType.ByValArray, SizeConst = 50)] public byte[] satelliteSystem;
+            //[MarshalAs(UnmanagedType.ByValArray, SizeConst = 50)] public double[] systemClockOffset;
+        }
+
+        [StructLayout(LayoutKind.Sequential, Pack = 1)]
+        public struct rt27_6_27_measurement
+        {
+            public rt27_6_27_measurementHeader header;
+            public rt27_6_27_measurementBlock block;
+        }
+
+        [StructLayout(LayoutKind.Sequential, Pack = 1)]
+        public struct rt27_6_27_measurementHeader
+        {
+            public byte blockLength;
+            public byte prn;
+            public byte svType;
+            public byte svChannel;
+            public byte nBlocks;
+            public sbyte elevation;
+            public byte azimuth;
+            public byte svFlags;
+            // if flags & 128 == 0 no more
+            public byte svFlags2;
+            // if flags2 & 128 == 0 no more
+
+            public UInt32 pseudoiode;
+        }
+
+        [StructLayout(LayoutKind.Sequential, Pack = 1)]
+        public struct rt27_6_27_measurementBlock
+        {
+            public byte blockLength;
+            public byte blockType;
+            public byte trackType;
+            public ushort snr;
+            public UInt32 pseudorange;
+            [MarshalAs(UnmanagedType.ByValArray, SizeConst = 6)]
+            public byte[] phase;
+            public byte cycleSlipCount;
+            public byte measurementFlags;
+            public byte measurementFlags2;
+            public byte measurementFlags3;
+            public double doppler;
+        }
+
+        [StructLayout(LayoutKind.Sequential, Pack = 1)]
+        public struct rt27_2_19
+        {
+            public byte Source;
+            public byte Port;
+            public short Number;
+            public double TOW;
+        }
+
+        [StructLayout(LayoutKind.Sequential, Pack = 1)]
+        public struct rt27_1_11
+        {
+            public double Latitude;
+            public double Longitude;
+            public double Altitude;
+            public double ClockOffset;
+            public double FreqOffset;
+            public double PDOP;
+            public double LatRate;
+            public double LongRate;
+            public double AltRate;
+            public uint TOW;
+            public byte PosFlag;
+            public byte SVs;
+            //public byte[] Channel = new byte[SVs];
+            //public byte[] Prn;
         }
 
         [StructLayout(LayoutKind.Sequential, Pack = 1)]
@@ -339,6 +421,7 @@ namespace MissionPlanner.Utilities
             public uint16_t std_dev;
         }
 
+        byte[] obsdata = new byte[20*1024];
 
         private bool process_message()
         {
@@ -348,11 +431,14 @@ namespace MissionPlanner.Utilities
             if (gsof_msg.packettype == 0x57) // RAWDATA 
             {
                 uint8_t record_type = gsof_msg.data[0];
-                uint8_t page_number = gsof_msg.data[1];
-                uint8_t reply_number = gsof_msg.data[2];
+                uint8_t page_total = (byte)(gsof_msg.data[1] & 0xf);
+                uint8_t page_number = (byte)((gsof_msg.data[1] >> 4) & 0xf);
+                uint8_t reply_number =(byte) gsof_msg.data[2];
                 uint8_t recordintflags = gsof_msg.data[3];
 
-                Console.WriteLine(DateTime.Now.Second + " record type: " + record_type);
+                bool consise = (recordintflags & 0x1) > 0;
+
+                Console.WriteLine(DateTime.Now.Second + " record type: " + record_type + " page_no " + page_number + "/" + page_total + " consise " + consise);
 
                 if (record_type == 7)
                 {
@@ -371,9 +457,111 @@ namespace MissionPlanner.Utilities
                     long lat = byte2long(test2.Lat);
                     long lng = byte2long(test2.Lng);
 
-                    Console.WriteLine("{0} {1} {2} {3} {4} {5} ", lat/p40, lng/p39, -34.98*p40, test2.Alt/p12,
+                    Console.WriteLine("{0} {1} {2} {3} {4} {5} ", lat/p40, lng/p39, test2.Alt/p12,
                         (test2.veln/p21), (test2.vele/p21), (test2.velu/p21),
                         test2.rx_clock_offset/p26, test2.rx_clock_drift/p17, test2.hdop/p4);
+                }
+                else if (record_type == 1)
+                {
+                    var test2 = (rt27_1_11)gsof_msg.data.ByteArrayToStructureBigEndian<rt27_1_11>(4);
+
+                    Console.WriteLine("{0} {1} {2}", ToDeg(test2.Latitude*Math.PI), ToDeg(test2.Longitude*Math.PI), test2.Altitude);
+                }
+                else if (record_type == 2)
+                {
+                    var test2 = (rt27_2_19)gsof_msg.data.ByteArrayToStructureBigEndian<rt27_2_19>(4);
+
+                    Console.WriteLine("Event {0} {1} {2} {3}", test2.Source, test2.Port, test2.Number, test2.TOW);
+                }
+                else if (record_type == 6) // there is no documentation on this
+                {
+                    if (page_number == 1)
+                    {
+                        obsdata.Initialize();
+                        Array.ConstrainedCopy(gsof_msg.data, 0, obsdata, 0, gsof_msg.length);
+                    }
+                    else
+                    {
+                        Array.ConstrainedCopy(gsof_msg.data, 4, obsdata, 248 + (page_number - 2) * 244, gsof_msg.length - 4);
+                    }
+                    
+
+                    if (page_number == page_total)
+                    {
+                        var m_epochHeader =
+                            (rt27_6_27_epochHeader)
+                                obsdata.ByteArrayToStructureBigEndian<rt27_6_27_epochHeader>(4);
+
+                        var head_len = m_epochHeader.blockLength;
+
+                        var m_sysOffsets = new rt27_6_27_sysOffsets();
+                        var obj = m_sysOffsets as object;
+                        MavlinkUtil.ByteArrayToStructureEndian(obsdata, ref obj, (4 + head_len));
+                        m_sysOffsets = (rt27_6_27_sysOffsets) obj;
+
+                        var sysoffset_lemn = m_sysOffsets.blockLength;
+
+                        var m_measurement = new List<rt27_6_27_measurement>();
+                        var SVs = m_epochHeader.nSVs;
+
+                        var offset = 4 + head_len + sysoffset_lemn;
+
+                        for (int index = 0; index < SVs; ++index)
+                        {
+                            var measheader = new rt27_6_27_measurementHeader();
+                            obj = measheader as object;
+                            MavlinkUtil.ByteArrayToStructureEndian(obsdata, ref obj, offset);
+                            measheader = (rt27_6_27_measurementHeader)obj;
+                            var meashead_len = measheader.blockLength;
+                            offset += meashead_len;
+
+                            string type = "";
+                            switch (measheader.svType)
+                            {
+                                case 0:
+                                    type = "Gps";
+                                    break;
+                                case 1:
+                                    type = "Sbas";
+                                    break;
+                                case 2:
+                                    type = "Glonass";
+                                    break;
+                                case 3:
+                                    type = "Galileo";
+                                    break;
+                                case 4:
+                                    type = "QZSS";
+                                    break;
+                                case 7:
+                                    type = "beidou";
+                                    break;
+                            }
+
+                            Console.WriteLine("prn {0} type {1} el {2} az {3} blocks {4}", measheader.prn, type, (double)(sbyte)measheader.elevation, (double)measheader.azimuth / Math.Pow(2.0, -1.0), measheader.nBlocks);
+
+                            for (int a = 0; a < measheader.nBlocks;a++)
+                            {
+                                var measblock = new rt27_6_27_measurementBlock();
+                                obj = measblock as object;
+                                MavlinkUtil.ByteArrayToStructureEndian(obsdata, ref obj, offset);
+                                measblock = (rt27_6_27_measurementBlock)obj;
+
+                                if (a == 0)
+                                {
+                                    Console.WriteLine("{0} {1}", measblock.pseudorange / Math.Pow(2.0, 7.0), byte2long(measblock.phase) / Math.Pow(2.0, 15.0));
+                                }
+                                else
+                                {
+                                }
+
+                                var measblock_len = measblock.blockLength;
+                                offset += measblock_len;
+
+                                m_measurement.Add(new rt27_6_27_measurement() { block = measblock, header = measheader });
+                            }
+                        }
+                    }
                 }
             }
 
@@ -411,7 +599,7 @@ namespace MissionPlanner.Utilities
                         if ((vflag & 1) == 1)
                         {
                             state.ground_speed = SwapFloat(gsof_msg.data, a + 1);
-                            state.ground_course_cd = (int32_t) (ToDeg(SwapFloat(gsof_msg.data, a + 5))*100);
+                            state.ground_course = (float)(ToDeg(SwapFloat(gsof_msg.data, a + 5)));
                             fill_3d_velocity();
                             state.velocity.Z = -SwapFloat(gsof_msg.data, a + 9);
                             state.have_vertical_velocity = true;
@@ -441,19 +629,19 @@ namespace MissionPlanner.Utilities
 
                         if ((posf1 & 1) == 1)
                         {
-                            state.status = AP_GPS_SBF.GPS_Status.GPS_OK_FIX_3D;
+                            state.status = AP_GPS.GPS_OK_FIX_3D;
                             if ((posf2 & 1) == 1)
                             {
-                                state.status = AP_GPS_SBF.GPS_Status.GPS_OK_FIX_3D_DGPS;
+                                state.status = AP_GPS.GPS_OK_FIX_3D_DGPS;
                                 if ((posf2 & 4) == 4)
                                 {
-                                    state.status = AP_GPS_SBF.GPS_Status.GPS_OK_FIX_3D_RTK;
+                                    state.status = AP_GPS.GPS_OK_FIX_3D_RTK;
                                 }
                             }
                         }
                         else
                         {
-                            state.status = AP_GPS_SBF.GPS_Status.NO_FIX;
+                            state.status = AP_GPS.NO_FIX;
                         }
                     }
 

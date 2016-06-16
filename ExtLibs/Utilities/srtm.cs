@@ -75,13 +75,13 @@ namespace MissionPlanner
             int y = (lat < 0) ? (int)(lat - 1) : (int)lat; ;//(int)Math.Floor(lat);
 
             string ns;
-            if (y > 0)
+            if (y >= 0)
                 ns = "N";
             else
                 ns = "S";
 
             string ew;
-            if (x > 0)
+            if (x >= 0)
                 ew = "E";
             else
                 ew = "W";
@@ -396,7 +396,7 @@ namespace MissionPlanner
 
         static void get3secfile(object name)
         {
-            //string baseurl1sec = "http://dds.cr.usgs.gov/srtm/version2_1/SRTM1/";
+            string baseurl1sec = "http://dds.cr.usgs.gov/srtm/version2_1/SRTM1/";
             string baseurl = "http://firmware.ardupilot.org/SRTM/";
 
             // check file doesnt already exist
@@ -546,6 +546,9 @@ namespace MissionPlanner
                     {
                         sw.WriteLine((string)x);
                     });
+
+                    if (name.Equals("README.txt") || name.Equals("Region_definition.jpg"))
+                        sw.Write(" ");
 
                     sw.Close();
                 }

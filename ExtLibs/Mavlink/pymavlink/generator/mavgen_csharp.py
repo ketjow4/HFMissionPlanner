@@ -47,9 +47,10 @@ def generate_message_header(f, xml):
         # we sort with primary key msgid, secondary key dialect
         for msgid in sorted(xml.message_names.keys()):
             name = xml.message_names[msgid]
-            xml.message_infos_array += '		new message_info(%u, "%s", %u, %u, typeof( mavlink_%s_t )),\n' % (msgid,
+            xml.message_infos_array += '		new message_info(%u, "%s", %u, %u, %u, typeof( mavlink_%s_t )),\n' % (msgid,
                                                                 name,
                                                                 xml.message_crcs[msgid],
+																xml.message_min_lengths[msgid],
                                                                 xml.message_lengths[msgid],
                                                                 name.lower())
             xml.message_names_enum += '%s = %u,\n' % (name, msgid)
@@ -59,9 +60,10 @@ def generate_message_header(f, xml):
             name = xml.message_names.get(msgid, None)
             length = xml.message_lengths.get(msgid, None)
             if name is not None:
-                xml.message_infos_array += '		new message_info(%u, "%s", %u, %u, typeof( mavlink_%s_t )),\n' % (msgid, 
+                xml.message_infos_array += '		new message_info(%u, "%s", %u, %u, %u, typeof( mavlink_%s_t )),\n' % (msgid, 
                                                                     name,
                                                                     crc,
+																	length,
                                                                     length,
                                                                     name.lower())
                 xml.message_names_enum += '%s = %u,\n' % (name, msgid)
@@ -112,6 +114,8 @@ public partial class MAVLink
     public const bool MAVLINK_ALIGNED_FIELDS = (${aligned_fields_define} == 1);
 
     public const byte MAVLINK_CRC_EXTRA = ${crc_extra_define};
+    
+    public const byte MAVLINK_COMMAND_24BIT = ${command_24bit_define};
         
     public const bool MAVLINK_NEED_BYTE_SWAP = (MAVLINK_ENDIAN == MAVLINK_LITTLE_ENDIAN);
         
@@ -195,14 +199,16 @@ ${message_infos_array}
         public uint msgid;
         public string name;
         public byte crc;
+		public uint minlength;
         public uint length;
         public Type type;
 
-        public message_info(uint msgid, string name, byte crc, uint length, Type type)
+        public message_info(uint msgid, string name, byte crc, uint minlength, uint length, Type type)
         {
             this.msgid = msgid;
             this.name = name;
             this.crc = crc;
+			this.minlength = minlength;
             this.length = length;
             this.type = type;
         }
@@ -211,8 +217,8 @@ ${message_infos_array}
     public enum MAVLINK_MSG_ID 
     {
         ${message_names_enum}
-    }      
-    
+    }  
+	    
 ''', xml)
 
 def generate_message_enums(f, xml):

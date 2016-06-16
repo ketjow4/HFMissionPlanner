@@ -1529,6 +1529,8 @@ namespace MissionPlanner.Log
                                     progressBar1.Refresh();
                                 }
 
+                                mine.getHeartBeat();
+
                                 mine.getParamList();
 
                                 foreach (string item in mine.MAV.param.Keys)
@@ -1593,6 +1595,8 @@ namespace MissionPlanner.Log
 
                             mine.logreadmode = true;
 
+                            mine.getHeartBeat();
+
                             while (mine.logplaybackfile.BaseStream.Position < mine.logplaybackfile.BaseStream.Length)
                             {
                                 int percent =
@@ -1625,7 +1629,7 @@ namespace MissionPlanner.Log
                                                      Path.GetFileNameWithoutExtension(logfile) + "-" + wplists +
                                                      ".waypoints");
 
-                                sw.WriteLine("QGC WPL 120");
+                                sw.WriteLine("QGC WPL 110");
                                 try
                                 {
                                     //get mission count info 
@@ -1643,9 +1647,9 @@ namespace MissionPlanner.Log
                                 {
                                     Locationwp wp = mine.getWP(a);
                                     //sw.WriteLine(item + "\t" + mine.param[item]);
-                                    byte mode = (byte) wp.id;
+                                    ushort mode = wp.id;
 
-                                    sw.Write((a + 1)); // seq
+                                    sw.Write((a)); // seq
                                     sw.Write("\t" + 0); // current
                                     sw.Write("\t" + (byte) MAVLink.MAV_FRAME.GLOBAL_RELATIVE_ALT); //frame 
                                     sw.Write("\t" + mode);

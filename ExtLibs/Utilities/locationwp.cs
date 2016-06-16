@@ -11,7 +11,7 @@ namespace MissionPlanner.Utilities
     /// </summary>
     public struct Locationwp
     {
-        public Locationwp Set(double lat, double lng, double alt, byte id)
+        public Locationwp Set(double lat, double lng, double alt, ushort id)
         {
             this.lat = lat;
             this.lng = lng;
@@ -35,14 +35,16 @@ namespace MissionPlanner.Utilities
         {
             Locationwp temp = new Locationwp()
             {
-                id = (byte)input.command,
+                id = input.command,
                 p1 = input.param1,
                 p2 = input.param2,
                 p3 = input.param3,
                 p4 = input.param4,
                 lat = input.x,
                 lng = input.y,
-                alt = input.z
+                alt = input.z,
+                _seq = input.seq,
+                _frame = input.frame
             };
 
             return temp;
@@ -52,14 +54,16 @@ namespace MissionPlanner.Utilities
         {
             Locationwp temp = new Locationwp()
             {
-                id = (byte)input.command,
+                id = input.command,
                 p1 = input.param1,
                 p2 = input.param2,
                 p3 = input.param3,
                 p4 = input.param4,
                 lat = input.x / 1.0e7,
                 lng = input.y / 1.0e7,
-                alt = input.z
+                alt = input.z,
+                _seq = input.seq,
+                _frame = input.frame
             };
 
             return temp;
@@ -78,7 +82,9 @@ namespace MissionPlanner.Utilities
                     param4 = cmd.p4,
                     x = (int)(cmd.lat * 1.0e7),
                     y = (int)(cmd.lng * 1.0e7),
-                    z = (float) cmd.alt
+                    z = (float) cmd.alt,
+                    seq = cmd._seq,
+                    frame = cmd._frame
                 };
 
                 return temp;
@@ -94,14 +100,19 @@ namespace MissionPlanner.Utilities
                     param4 = cmd.p4,
                     x = (float) cmd.lat,
                     y = (float) cmd.lng,
-                    z = (float) cmd.alt
+                    z = (float) cmd.alt,
+                    seq = cmd._seq,
+                    frame = cmd._frame
                 };
 
                 return temp;
             }
         }
 
-        public byte id;				// command id
+        private ushort _seq;
+        private byte _frame;
+
+        public ushort id;				// command id
         public byte options;
         public float p1;				// param 1
         public float p2;				// param 2

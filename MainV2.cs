@@ -9,6 +9,7 @@ using System.Xml;
 using System.Collections;
 using System.Runtime.InteropServices;
 using System.Globalization;
+using System.Linq;
 using System.Threading;
 using MissionPlanner.Utilities;
 using IronPython.Hosting;
@@ -271,7 +272,6 @@ namespace MissionPlanner
         internal object adsblock = new object();
 
         public Hashtable adsbPlanes = new Hashtable();
-        public Hashtable adsbPlaneAge = new Hashtable();
 
         string titlebar;
 
@@ -802,12 +802,12 @@ namespace MissionPlanner
                 }
             }
 
-            if (Program.Logo != null)
+            if (Program.IconFile != null)
             {
-                this.Icon = Icon.FromHandle(((Bitmap) Program.Logo).GetHicon());
+                this.Icon = Icon.FromHandle(((Bitmap)Program.IconFile).GetHicon());
             }
 
-            if (Program.Logo != null && Program.vvvvz)
+            if (Program.Logo != null && Program.name == "VVVVZ")
             {
                 MenuDonate.Click -= this.toolStripMenuItem1_Click;
                 MenuDonate.Text = "";
@@ -822,6 +822,12 @@ namespace MissionPlanner
                 MenuInitConfig.Visible = false;
                 MenuSimulation.Visible = false;
                 MenuTerminal.Visible = false;
+            }
+            else if (Program.Logo != null && Program.names.Contains(Program.name))
+            {
+                MenuDonate.Click -= this.toolStripMenuItem1_Click;
+                MenuDonate.Text = "";
+                MenuDonate.Image = Program.Logo;
             }
 
             Application.DoEvents();
@@ -960,7 +966,7 @@ namespace MissionPlanner
             {
                 adsbPlanes[((MissionPlanner.Utilities.adsb.PointLatLngAltHdg) sender).Tag] =
                     ((MissionPlanner.Utilities.adsb.PointLatLngAltHdg) sender);
-                adsbPlaneAge[((MissionPlanner.Utilities.adsb.PointLatLngAltHdg) sender).Tag] = DateTime.Now;
+                adsbPlanes[((MissionPlanner.Utilities.adsb.PointLatLngAltHdg) sender).Tag] = DateTime.Now;
             }
         }
 
@@ -1838,7 +1844,7 @@ namespace MissionPlanner
                                     }
                                     else
                                     {
-                                        comPort.sendPacket(rc);
+                                        comPort.sendPacket(rc, rc.target_system, rc.target_component);
                                     }
                                     count++;
                                     lastjoystick = DateTime.Now;
@@ -2243,30 +2249,67 @@ namespace MissionPlanner
                             mavlink_version = 3 // MAVLink.MAVLINK_VERSION
                         };
 
+                        // enumerate each link
                         foreach (var port in Comports)
                         {
-                            try
+                            // there are 3 hb types we can send, mavlink1, mavlink2 signed and unsigned
+                            bool sentsigned = false;
+                            bool sentmavlink1 = false;
+                            bool sentmavlink2 = false;
+
+                            // enumerate each mav
+                            foreach (var MAV in port.MAVlist.GetMAVStates())
                             {
-                                port.sendPacket(htb);
-                            }
-                            catch (Exception ex)
-                            {
-                                log.Error(ex);
-                                // close the bad port
-                                port.Close();
-                                // refresh the screen if needed
-                                if (port == MainV2.comPort)
+                                try
                                 {
-                                    // refresh config window if needed
-                                    if (MyView.current != null)
+                                    // are we talking to a mavlink2 device
+                                    if (MAV.mavlinkv2)
                                     {
-                                        this.Invoke((MethodInvoker)delegate()
+                                        // is signing enabled
+                                        if (MAV.signing)
                                         {
-                                            if (MyView.current.Name == "HWConfig")
-                                                MyView.ShowScreen("HWConfig");
-                                            if (MyView.current.Name == "SWConfig")
-                                                MyView.ShowScreen("SWConfig");
-                                        });
+                                            // check if we have already sent
+                                            if (sentsigned)
+                                                continue;
+                                            sentsigned = true;
+                                        }
+                                        else
+                                        {
+                                            // check if we have already sent
+                                            if (sentmavlink2)
+                                                continue;
+                                            sentmavlink2 = true;
+                                        }
+                                    }
+                                    else
+                                    {
+                                        // check if we have already sent
+                                        if (sentmavlink1)
+                                            continue;
+                                        sentmavlink1 = true;
+                                    }
+
+                                    port.sendPacket(htb, MAV.sysid, MAV.compid);
+                                }
+                                catch (Exception ex)
+                                {
+                                    log.Error(ex);
+                                    // close the bad port
+                                    port.Close();
+                                    // refresh the screen if needed
+                                    if (port == MainV2.comPort)
+                                    {
+                                        // refresh config window if needed
+                                        if (MyView.current != null)
+                                        {
+                                            this.Invoke((MethodInvoker) delegate()
+                                            {
+                                                if (MyView.current.Name == "HWConfig")
+                                                    MyView.ShowScreen("HWConfig");
+                                                if (MyView.current.Name == "SWConfig")
+                                                    MyView.ShowScreen("SWConfig");
+                                            });
+                                        }
                                     }
                                 }
                             }
@@ -2395,7 +2438,7 @@ namespace MissionPlanner
                 log.Error(ex);
             }
 
-            if (Program.Logo != null && Program.vvvvz)
+            if (Program.Logo != null && Program.name == "VVVVZ")
             {
                 this.PerformLayout();
                 MenuFlightPlanner_Click(this, e);
@@ -2512,7 +2555,7 @@ namespace MissionPlanner
                     LogBrowse logbrowse = new LogBrowse();
                     ThemeManager.ApplyThemeTo(logbrowse);
                     logbrowse.logfilename = Program.args[0];
-                    logbrowse.Show();
+                    logbrowse.Show(this);
                     logbrowse.TopMost = true;
                 }
             }

@@ -46,9 +46,17 @@ namespace MissionPlanner.GCSViews.ConfigurationView
             mavlinkComboBox1.setup(
                 ParameterMetaDataRepository.GetParameterOptionsInt("AHRS_ORIENTATION",
                     MainV2.comPort.MAV.cs.firmware.ToString()), "AHRS_ORIENTATION", MainV2.comPort.MAV.param);
-            mavlinkComboBox2.setup(
-                ParameterMetaDataRepository.GetParameterOptionsInt("SERVO_TYPE",
-                    MainV2.comPort.MAV.cs.firmware.ToString()), "SERVO_TYPE", MainV2.comPort.MAV.param);
+            mavlinkComboBoxservo_yaw_type.setup(
+                ParameterMetaDataRepository.GetParameterOptionsInt("SERVO_YAW_TYPE",
+                    MainV2.comPort.MAV.cs.firmware.ToString()), "SERVO_YAW_TYPE", MainV2.comPort.MAV.param);
+            mavlinkComboBoxservo_pitch_type.setup(
+            ParameterMetaDataRepository.GetParameterOptionsInt("SERVO_PITCH_TYPE",
+                MainV2.comPort.MAV.cs.firmware.ToString()), "SERVO_PITCH_TYPE", MainV2.comPort.MAV.param);
+
+            mavlinkComboBoxalt_source.setup(
+            ParameterMetaDataRepository.GetParameterOptionsInt("ALT_SOURCE",
+                MainV2.comPort.MAV.cs.firmware.ToString()), "ALT_SOURCE", MainV2.comPort.MAV.param);
+
 
             // yaw
             mavlinkNumericUpDown1.setup(900, 2200, 1, 1, "RC1_MIN", MainV2.comPort.MAV.param);
@@ -266,8 +274,18 @@ namespace MissionPlanner.GCSViews.ConfigurationView
 
         private void BUT_test_yaw_Click(object sender, EventArgs e)
         {
-            var output = map(myTrackBar1.Value, myTrackBar1.Minimum, myTrackBar1.Maximum,
-                (double) mavlinkNumericUpDown1.Value, (double) mavlinkNumericUpDown2.Value);
+            double output = 1500;
+
+            if (mavlinkCheckBox1.Checked)
+            {
+                output = map(myTrackBar1.Value, myTrackBar1.Maximum, myTrackBar1.Minimum,
+                    (double) mavlinkNumericUpDown1.Value, (double) mavlinkNumericUpDown2.Value);
+            }
+            else
+            {
+                output = map(myTrackBar1.Value, myTrackBar1.Minimum, myTrackBar1.Maximum,
+                    (double) mavlinkNumericUpDown1.Value, (double) mavlinkNumericUpDown2.Value);
+            }
 
             try
             {
@@ -281,8 +299,17 @@ namespace MissionPlanner.GCSViews.ConfigurationView
 
         private void BUT_test_pitch_Click(object sender, EventArgs e)
         {
-            var output = map(myTrackBar2.Value, myTrackBar2.Minimum, myTrackBar2.Maximum,
-                (double) mavlinkNumericUpDown6.Value, (double) mavlinkNumericUpDown5.Value);
+            double output = 1500;
+            if (mavlinkCheckBox2.Checked)
+            {
+                output = map(myTrackBar2.Value, myTrackBar2.Maximum, myTrackBar2.Minimum, 
+                    (double)mavlinkNumericUpDown6.Value, (double)mavlinkNumericUpDown5.Value);
+            }
+            else
+            {
+                output = map(myTrackBar2.Value, myTrackBar2.Minimum, myTrackBar2.Maximum,
+                    (double) mavlinkNumericUpDown6.Value, (double) mavlinkNumericUpDown5.Value);
+            }
 
             try
             {

@@ -43,6 +43,12 @@ namespace MissionPlanner.Comms
             get { return (int) baud; }
         }
 
+        public MAVLinkSerialPort(MAVLinkInterface mavint, int port)
+            : this(mavint, (MAVLink.SERIAL_CONTROL_DEV)port)
+        {
+
+        }
+
         public MAVLinkSerialPort(MAVLinkInterface mavint, MAVLink.SERIAL_CONTROL_DEV port)
         {
             this.mavint = mavint;
@@ -55,7 +61,7 @@ namespace MissionPlanner.Comms
 
             if (mavint.getHeartBeat().Length == 0)
             {
-                throw new Exception("No valid heartbeats read from port");
+                throw new Exception(Strings.No_valid_heartbeats_read_from_port);
             }
 
             if (subscription.Value != null)
@@ -146,11 +152,13 @@ namespace MissionPlanner.Comms
         {
             int count = 0;
 
+            DateTime deadline = DateTime.Now.AddMilliseconds(timeout);
+
             while (buffer.Size == 0)
             {
                 GetData();
                 System.Threading.Thread.Sleep(1);
-                if (count > ReadTimeout)
+                if (DateTime.Now > deadline)
                     throw new Exception("MAVLinkSerialPort Timeout on read");
                 count += 1;
             }
